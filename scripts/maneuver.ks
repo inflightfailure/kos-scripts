@@ -31,7 +31,7 @@ IF VOLUME():NAME = "0" {
 // Default targets (0 means ignore)
 SET targetPeriapsis TO 0.
 SET targetApoapsis TO 0.
-
+SET burnAt TO "".
 SET mode TO mode:TOLOWER().
 
 IF mode = "pe" {
@@ -157,8 +157,7 @@ IF burnStartTime - time:seconds > 30 {
 }
 
 // Point to maneuver nicenode direction
-SET niceBurnVector TO nicenode:DELTAV.
-LOCK STEERING TO niceBurnVector.
+LOCK STEERING TO nicenode:BURNVECTOR.
 PRINT "Locking steering to maneuver node.".
 
 // Wait until burn start time
@@ -174,7 +173,7 @@ SET margin TO 20. // meters of tolerance
 LOCK THROTTLE TO 1.
 SET lastDeltaV TO nicenode:DELTAV:MAG.
 
-UNTIL (nicenode:DELTAV:MAG < 0.5 OR
+UNTIL (nicenode:DELTAV:MAG < 1 OR
   (burnAt = "apoapsis" AND periTargetAlt > 0 AND SHIP:PATCHES:LENGTH > 1 AND SHIP:PATCHES[1]:PERIAPSIS >= periTargetAlt - margin) OR
   (burnAt = "periapsis" AND apoTargetAlt > 0 AND SHIP:PATCHES:LENGTH > 1 AND SHIP:PATCHES[1]:APOAPSIS >= apoTargetAlt - margin))
 {
@@ -196,7 +195,7 @@ UNTIL (nicenode:DELTAV:MAG < 0.5 OR
     SET lastDeltaV TO remainingDeltaV.
 
     IF remainingDeltaV < (0.1 * deltaV) AND time:seconds < (nicenode:TIME + (burnTime / 2) - MIN(5, burnTime / 10)) {
-        LOCK THROTTLE TO MAX((remainingDeltaV / deltaV) * 2, 0.1). // Gradual throttle reduction
+        LOCK THROTTLE TO MAX((remainingDeltaV / deltaV), 0.1). // Gradual throttle reduction
     }
 
     IF time:seconds > nicenode:TIME + (burnTime * 1.25) {
