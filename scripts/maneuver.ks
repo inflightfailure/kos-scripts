@@ -184,25 +184,21 @@ UNTIL (nicenode:DELTAV:MAG < 1 OR
     }
 
     SET remainingDeltaV TO nicenode:DELTAV:MAG.
-    // PRINT "Remaining DeltaV: " + ROUND(remainingDeltaV, 2).
-    // PRINT "Current Periapsis: " + ROUND(SHIP:ORBIT:PERIAPSIS, 1) + " / Target: " + periTargetAlt.
-    // PRINT "Current Apoapsis: " + ROUND(SHIP:ORBIT:APOAPSIS, 1) + " / Target: " + apoTargetAlt.
 
-    IF remainingDeltaV > lastDeltaV + 0.1{
-        PRINT "Delta-v increasing unexpectedly. Aborting burn.".
+    IF VDOT(dv0, nicenode:DELTAV) < 0 {
+        PRINT "Node vector diverging. Terminating burn early.".
+        LOCK THROTTLE TO 0.
         BREAK.
     }
+
+    IF remainingDeltaV < 0.1 {
+        PRINT "Finalizing burn, remaining Δv: " + ROUND(remainingDeltaV, 2).
+        WAIT UNTIL VDOT(dv0, nicenode:DELTAV) < 0.5.
+        BREAK.
+    }
+
     SET lastDeltaV TO remainingDeltaV.
-
-    IF remainingDeltaV < (0.1 * deltaV) AND time:seconds < (nicenode:TIME + (burnTime / 2) - MIN(5, burnTime / 10)) {
-        LOCK THROTTLE TO MAX((remainingDeltaV / deltaV), 0.1). // Gradual throttle reduction
-    }
-
-    IF time:seconds > nicenode:TIME + (burnTime * 1.25) {
-        PRINT "Burn timeout. Ending early.".
-        BREAK.
-    }
-    // WAIT 0.001.
+    WAIT 0.
 }
 
 LOCK THROTTLE TO 0.
