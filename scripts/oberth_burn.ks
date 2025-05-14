@@ -1,25 +1,33 @@
 // oberth_burn.ks
 SET MIN_PERIAPSIS_ALTITUDE TO 70000.
 SET PASSES_DONE TO 0.
-SET TOTAL_DV TO 800. // Replace or load from planner
-SET V_INITIAL TO SHIP:VELOCITY:ORBIT:MAG.
-SET TARGET_V TO V_INITIAL + TOTAL_DV.
+
+// --- Step 1: Read maneuver node ---
+IF NODE:EXISTS {
+    SET MAN_NODE TO NODE.
+    SET DELTA_V_VECTOR TO MAN_NODE:DELTAV.
+    SET TOTAL_DV TO DELTA_V_VECTOR:MAG.
+    SET BURN_VECTOR TO DELTA_V_VECTOR:NORMALIZED.
+    PRINT "Loaded maneuver node Δv: " + ROUND(TOTAL_DV,1) + " m/s".
+} ELSE {
+    PRINT "No maneuver node found. Aborting.".
+    WAIT 0.
+}
 
 // Δv availability check
 SET MAX_DV TO SHIP:MAXDELTA.
-IF TOTAL_DV > MAX_DV {
     PRINT "ERROR: Required Δv (" + TOTAL_DV + ") exceeds vessel capability (" + MAX_DV + ").".
-}
+    WAIT 0.
 
 // --- Optimization function ---
 DECLARE FUNCTION burn_utility {
-    DECLARE PARAMETER burn_dv.
-    DECLARE PARAMETER total_dv.
-    DECLARE PARAMETER isp.
-    DECLARE PARAMETER thrust.
-    DECLARE PARAMETER mass.
-    DECLARE PARAMETER mu.
-    DECLARE PARAMETER r_per.
+    PARAMETER burn_dv.
+    PARAMETER total_dv.
+    PARAMETER isp.
+    PARAMETER thrust.
+    PARAMETER mass.
+    PARAMETER mu.
+    PARAMETER r_per.
 
     SET accel TO thrust / mass.
     SET burn_time TO burn_dv / accel.
@@ -33,14 +41,14 @@ DECLARE FUNCTION burn_utility {
 
     SET burn_count TO CEILING(total_dv / burn_dv).
 
-    SET k1 TO 1.5. // Efficiency weight
-    SET k2 TO 1.0. // Burn count penalty
+    SET k1 TO 1.5.
+    SET k2 TO 1.0.
 
     RETURN k1 * efficiency_score - k2 * burn_count.
 }
 
 // --- Auto-select best Δv per pass ---
-SET burn_sizes TO LIST(30, 50, 70, 90, 120).
+SET burn_sizes_list to LIST(30, 50, 70, 90, 120).
 SET best_score TO -99999.
 SET best_burn TO 0.
 
@@ -50,7 +58,7 @@ SET ISP TO SHIP:ISP.
 SET T TO SHIP:MAXTHRUST.
 SET MASS TO SHIP:MASS.
 
-FOR b IN burn_sizes {
+FOR b IN burn_sizes_list {
     SET score TO burn_utility(b, TOTAL_DV, ISP, T, MASS, MU, R_PER).
     PRINT "Δv " + b + ": score = " + score.
     IF score > best_score {
@@ -61,16 +69,18 @@ FOR b IN burn_sizes {
 
 SET MAX_DV_PER_PASS TO best_burn.
 SET PASS_COUNT TO CEILING(TOTAL_DV / MAX_DV_PER_PASS).
+SET V_INITIAL TO SHIP:VELOCITY:ORBIT:MAG.
+SET TARGET_V TO V_INITIAL + TOTAL_DV.
 
-PRINT "Optimal Δv per pass: " + MAX_DV_PER_PASS + " m/s over " + PASS_COUNT + " passes.".
+PRINT "Using optimized Δv per pass: " + MAX_DV_PER_PASS + " m/s over " + PASS_COUNT + " passes.".
 
 // --- Burn loop ---
 UNTIL PASSES_DONE >= PASS_COUNT OR SHIP:VELOCITY:ORBIT:MAG >= TARGET_V {
     PRINT "Waiting for periapsis...".
     WAIT UNTIL SHIP:PERIAPSIS < MIN_PERIAPSIS_ALTITUDE.
 
-    PRINT "Pass " + (PASSES_DONE+1) + ": Steering to prograde.".
-    LOCK STEERING TO PROGRADE.
+    PRINT "Pass " + (PASSES_DONE+1) + ": Steering to maneuver direction.".
+    LOCK STEERING TO BURN_VECTOR:VUNIT.
 
     SET CURRENT_V TO SHIP:VELOCITY:ORBIT:MAG.
     SET TARGET_PASS_V TO MIN(CURRENT_V + MAX_DV_PER_PASS, TARGET_V).
@@ -84,10 +94,14 @@ UNTIL PASSES_DONE >= PASS_COUNT OR SHIP:VELOCITY:ORBIT:MAG >= TARGET_V {
     PRINT "Pass " + PASSES_DONE + " complete.".
 
     SET PASSES_DONE TO PASSES_DONE + 1.
-
-    // Update mass & reoptimize if desired (optional)
     SET MASS TO SHIP:MASS.
     WAIT 2.
+}
+
+// Clean up node
+IF NODE:EXISTS {
+    NODE:REMOVE.
+    PRINT "Maneuver node removed.".
 }
 
 LOCK STEERING TO UP + R(0,90,0).
