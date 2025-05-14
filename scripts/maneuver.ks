@@ -172,8 +172,9 @@ SET margin TO 20. // meters of tolerance
 // Execute burn
 LOCK THROTTLE TO 1.
 SET lastDeltaV TO nicenode:DELTAV:MAG.
+SET dv0 to nicenode:DELTAV.
 
-UNTIL (nicenode:DELTAV:MAG < 1 OR
+UNTIL (nicenode:DELTAV:MAG < 0.1 OR
   (burnAt = "apoapsis" AND periTargetAlt > 0 AND SHIP:PATCHES:LENGTH > 1 AND SHIP:PATCHES[1]:PERIAPSIS >= periTargetAlt - margin) OR
   (burnAt = "periapsis" AND apoTargetAlt > 0 AND SHIP:PATCHES:LENGTH > 1 AND SHIP:PATCHES[1]:APOAPSIS >= apoTargetAlt - margin))
 {
