@@ -10,11 +10,18 @@ SET lonMargin TO 1.5.
 SET latMargin TO 0.2.
 
 // === TRAJECTORIES MOD CHECK ===
-IF NOT ADDONS:CONTAINS("TRAJECTORIES") {
+IF NOT ADDONS:TR:AVAILABLE {
     PRINT "ERROR: Trajectories mod not found. Aborting.".
     SHUTDOWN.
 }
-SET traj TO ADDONS:TRAJECTORIES.
+
+// === WAIT FOR TRAJECTORY PREDICTION ===
+UNTIL ADDONS:TR:HASTARGET {
+    PRINT "Waiting for valid Trajectories prediction... Please open the Trajectories GUI and generate a prediction.".
+    WAIT 5.
+}
+PRINT "Trajectory prediction acquired.".
+SET traj TO ADDONS:TR:PLANNEDVEC.
 
 // === SANITY CHECK ===
 IF SAS {

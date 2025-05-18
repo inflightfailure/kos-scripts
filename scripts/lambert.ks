@@ -10,7 +10,7 @@ FUNCTION LAMBERT_TRANSFER {
   SET A TO SIN(theta) * SQRT(r1mag * r2mag / (1 - COS(theta))).
 
   IF A = 0 OR r1mag = 0 OR r2mag = 0 {
-    RETURN NONE. // Invalid geometry
+    RETURN FALSE. // Invalid geometry
   }
 
   // Iterative solution
@@ -28,7 +28,7 @@ FUNCTION LAMBERT_TRANSFER {
       SET C TO (1 - COS(SQRT(z))) / z.
       SET S TO (SQRT(z) - SIN(SQRT(z))) / (SQRT(z)^3).
     } ELSE IF z < 0 {
-      SET C TO (1 - COSH(SQRT(-z))) / z.
+      SET C TO (1 - ((EXP(SQRT(-z)) + EXP(-SQRT(-z))) / 2)) / z.
       SET S TO (SINH(SQRT(-z)) - SQRT(-z)) / ((-SQRT(-z))^3).
     } ELSE {
       SET C TO 0.5.
@@ -37,14 +37,14 @@ FUNCTION LAMBERT_TRANSFER {
 
     SET y TO r1mag + r2mag + A * (z * S - 1) / SQRT(C).
     IF y < 0 OR C = 0 {
-      RETURN NONE. // Divergence or singularity
+      RETURN FALSE. // Divergence or singularity
     }
 
     SET F TO (y / C)^1.5 * S + A * SQRT(y) - SQRT(mu) * tof.
     SET dFdx TO (y / C)^1.5 * (0.5 / x * (C - 3*S / (2*C))) + A / 8 * (3*S / C - 1) * SQRT(y).
 
     IF dFdx = 0 {
-      RETURN NONE. // Derivative singularity
+      RETURN FALSE. // Derivative singularity
     }
 
     SET dx TO F / dFdx.
@@ -57,7 +57,7 @@ FUNCTION LAMBERT_TRANSFER {
   }
 
   IF NOT solved OR y <= 0 {
-    RETURN NONE. // Did not converge
+    RETURN FALSE. // Did not converge
   }
 
   // Final solve
@@ -66,7 +66,7 @@ FUNCTION LAMBERT_TRANSFER {
   SET gdot TO 1 - y / r2mag.
 
   IF g = 0 {
-    RETURN NONE. // Invalid result
+    RETURN FALSE. // Invalid result
   }
 
   SET v1 TO (r2 - (r1 * f)) / g.
