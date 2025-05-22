@@ -1,3 +1,5 @@
+venv/
+
 scripts/createDragData.ks
 scripts/exec_lvd_control.ks
 scripts/lib_navball.ks

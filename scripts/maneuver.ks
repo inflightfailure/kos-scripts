@@ -101,6 +101,13 @@ SET dv0 to nicenode:DELTAV.
 UNTIL nicenode:DELTAV:MAG < 0.1 {
     SET remainingDeltaV TO nicenode:DELTAV:MAG.
 
+    // Gradually reduce throttle when remainingDeltaV < 10 or less than 10% of initial deltaV
+    IF remainingDeltaV < 10 or remainingDeltaV < dv0:MAG * 0.1 {
+        LOCK THROTTLE TO MAX(0.1, remainingDeltaV / 10).
+    } ELSE {
+        LOCK THROTTLE TO 1.
+    }
+
     IF VDOT(dv0, nicenode:DELTAV) < 0 {
         PRINT "Node vector diverging. Terminating burn early.".
         LOCK THROTTLE TO 0.
