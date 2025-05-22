@@ -87,7 +87,7 @@ DECLARE FUNCTION burn_utility {
 }
 
 // --- Auto-select best Δv per pass ---
-SET burn_sizes_list TO LIST(30, 50, 70, 90, 120).
+SET burn_sizes_list TO LIST(2, 3, 5, 8, 12, 20).
 SET best_score TO -99999.
 SET best_burn TO 0.
 
@@ -144,9 +144,18 @@ DECLARE FUNCTION perform_periapsis_burns {
   PARAMETER numPasses.
 
   // Capture original burn vector before any burn
-  SET thisnode TO MAN_NODE(TIME:SECONDS + VESSEL:ORBIT:PERIAPSIS:ETA, totalDV, 0, 0).
-  SET burnVec TO thisnode:DIRECTION:VEC:NORMALIZED.
+//   SET thisnode TO NODE(TIME:SECONDS + SHIP:OBT:ETA:PERIAPSIS, totalDV, 0, 0).
+//   ADD thisnode.
+//   SET burnVec TO thisnode:DELTAV:NORMALIZED.
+
+  // Capture and delete initial node
+    SET orignode TO NEXTNODE.
+    SET burnVec TO orignode:DELTAV:NORMALIZED.
+    REMOVE orignode.
+    PRINT "Captured and deleted original maneuver node.".
+
   LOCK STEERING TO burnVec.
+  WAIT 10.
   PRINT "Captured burn vector: " + burnVec.
 
   // Estimate per-pass delta-V
@@ -161,7 +170,7 @@ DECLARE FUNCTION perform_periapsis_burns {
   SET i TO 1.
   UNTIL i > numPasses {
     PRINT "=== Burn pass " + i + "/" + numPasses + " ===".
-    SET periTime TO TIME:SECONDS + VESSEL:ORBIT:PERIAPSIS:ETA.
+    SET periTime TO TIME:SECONDS + SHIP:OBT:ETA:PERIAPSIS.
     SET burnStart TO periTime - (segmentTime / 2).
     WAIT UNTIL TIME:SECONDS >= burnStart - 2. // buffer
 
@@ -177,10 +186,16 @@ DECLARE FUNCTION perform_periapsis_burns {
 
     // Wait to coast to next periapsis
     IF i < numPasses {
-      PRINT "Coasting to next periapsis...".
-      WAIT UNTIL VESSEL:ORBIT:PERIAPSIS:ETA > 5.
-      WAIT UNTIL VESSEL:ORBIT:PERIAPSIS:ETA < 60.
+        PRINT "Warping to next periapsis...".
+        WAIT 2.
+        SET periapsisTime TO TIME:SECONDS + SHIP:OBT:ETA:PERIAPSIS.
+        KUNIVERSE:TIMEWARP:WARPTO(periapsisTime - 30).
+        WAIT UNTIL KUNIVERSE:TIMEWARP:RATE = 1.
+        WAIT 1.
+        LOCK STEERING TO burnVec.
+        WAIT 10.
     }
+
     SET i TO i + 1.
   }
 
