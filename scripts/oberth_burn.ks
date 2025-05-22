@@ -87,7 +87,7 @@ DECLARE FUNCTION burn_utility {
 }
 
 // --- Auto-select best Δv per pass ---
-SET burn_sizes_list TO LIST(2, 3, 5, 8, 12, 20).
+SET burn_sizes_list TO LIST(10, 20, 30, 50, 80, 120, 200, 320, 520, 840).
 SET best_score TO -99999.
 SET best_burn TO 0.
 
@@ -143,14 +143,11 @@ DECLARE FUNCTION perform_periapsis_burns {
   PARAMETER burnThrottle.
   PARAMETER numPasses.
 
-  // Capture original burn vector before any burn
-//   SET thisnode TO NODE(TIME:SECONDS + SHIP:OBT:ETA:PERIAPSIS, totalDV, 0, 0).
-//   ADD thisnode.
-//   SET burnVec TO thisnode:DELTAV:NORMALIZED.
-
   // Capture and delete initial node
     SET orignode TO NEXTNODE.
     SET burnVec TO orignode:DELTAV:NORMALIZED.
+    SET originalDV TO orignode:DELTAV:MAG.
+    SET remainingDV TO originalDV.
     REMOVE orignode.
     PRINT "Captured and deleted original maneuver node.".
 
@@ -168,10 +165,42 @@ DECLARE FUNCTION perform_periapsis_burns {
   PRINT "Burn duration per pass: " + segmentTime.
 
   SET i TO 1.
-  UNTIL i > numPasses {
+  UNTIL i > numPasses OR remainingDV <= 0.1 {
     PRINT "=== Burn pass " + i + "/" + numPasses + " ===".
     SET periTime TO TIME:SECONDS + SHIP:OBT:ETA:PERIAPSIS.
     SET burnStart TO periTime - (segmentTime / 2).
+
+    // Add a temporary dummy node to access its reference frame
+    SET nodeTime TO burnStart. // Absolute UT time of the desired burn
+    SET nodeUTOffset TO nodeTime - TIME:SECONDS. // Offset from NOW in seconds
+
+    // Add dummy node
+    SET dummy_node TO NODE(nodeUTOffset, 0, 0, 0).
+    ADD dummy_node.
+    WAIT 0.1.
+
+    // SET pass_node TO NODE(nodeUTOffset, 0, 0, 0).
+    // ADD pass_node.
+    // WAIT 0.1.
+
+    // Calculate future frame at burn time
+    SET futurePos TO POSITIONAT(SHIP, burnStart).
+    SET futureVel TO VELOCITYAT(SHIP, burnStart):ORBIT.
+
+    SET progradeVec TO futureVel:NORMALIZED.
+    SET normalVec TO VCRS(futurePos, futureVel):NORMALIZED.
+    SET radialVec TO VCRS(normalVec, progradeVec):NORMALIZED.
+
+    // Transform burnVec into orbital frame basis at burn time
+    SET progradeDV TO VDOT(burnVec, progradeVec).
+    SET normalDV TO VDOT(burnVec, normalVec).
+    SET radialDV TO VDOT(burnVec, radialVec).
+
+    REMOVE dummy_node. // Clean up dummy before adding the final node
+
+    SET pass_node TO NODE(nodeUTOffset, progradeDV, normalDV, radialDV).
+    ADD pass_node.
+
     WAIT UNTIL TIME:SECONDS >= burnStart - 2. // buffer
 
     PRINT "Warping to burn start: T+" + (burnStart - TIME:SECONDS) + "s".
@@ -181,11 +210,35 @@ DECLARE FUNCTION perform_periapsis_burns {
     PRINT "Burning...".
     LOCK THROTTLE TO burnThrottle.
     WAIT segmentTime.
+
+    SET remainingDV TO remainingDV - segmentDV.
+
+    // Remove the node after the burn
+    IF HASNODE {
+        REMOVE NEXTNODE.
+    }
+
+    IF SHIP:OBT:ECCENTRICITY >= 1 {
+        PRINT "Trajectory is now hyperbolic. Completing original maneuver burn.".
+        UNTIL remainingDV <= 0.1 {
+            LOCK THROTTLE TO burnThrottle.
+            WAIT 0.1.
+            IF SHIP:AVAILABLETHRUST = 0 AND THROTTLE > 0 {
+                PRINT "No thrust detected. Staging...".
+                STAGE.
+                WAIT 1. // Give time for engines to activate
+            }
+        }
+        LOCK THROTTLE TO 0.
+        PRINT "Original maneuver burn complete.".
+        BREAK.
+    }
+
     LOCK THROTTLE TO 0.
     PRINT "Pass " + i + " complete.".
 
     // Wait to coast to next periapsis
-    IF i < numPasses {
+    IF i < numPasses AND remainingDV > 0.1 {
         PRINT "Warping to next periapsis...".
         WAIT 2.
         SET periapsisTime TO TIME:SECONDS + SHIP:OBT:ETA:PERIAPSIS.
@@ -203,49 +256,7 @@ DECLARE FUNCTION perform_periapsis_burns {
   PRINT "All burn passes complete.".
 }
 
-perform_periapsis_burns(MAX_DV, 1, PASS_COUNT).
-
-// // --- Burn loop ---
-// UNTIL PASSES_DONE >= PASS_COUNT OR SHIP:VELOCITY:ORBIT:MAG >= TARGET_V {
-
-//     // Timewarp to just before periapsis
-//     SET periapsisTime TO TIME:SECONDS + SHIP:OBT:ETA:PERIAPSIS.
-
-//     IF periapsisTime - TIME:SECONDS > 30 {
-//         PRINT "Warping to periapsis at UT: " + periapsisTime.
-//         KUNIVERSE:TIMEWARP:WARPTO(periapsisTime - 30).
-//         WAIT UNTIL KUNIVERSE:TIMEWARP:RATE = 1.
-//         WAIT 1.
-//     }
-
-//     PRINT "Pass " + (PASSES_DONE+1) + ": Steering to burn vector (not maneuver!).".
-//     LOCK STEERING TO BURN_VECTOR.
-
-//     SET CURRENT_V TO SHIP:VELOCITY:ORBIT:MAG.
-//     SET TARGET_PASS_V TO MIN(CURRENT_V + MAX_DV_PER_PASS, TARGET_V).
-
-//     // TODO: fix in case it takes too long for the steering to lock
-//     PRINT "Waiting for periapsis...".
-//     WAIT UNTIL SHIP:OBT:ETA:PERIAPSIS < 1.
-
-//     PRINT "Burning to reach " + ROUND(TARGET_PASS_V,1) + " m/s.".
-//     LOCK THROTTLE TO 1.
-
-//     WAIT UNTIL SHIP:VELOCITY:ORBIT:MAG >= TARGET_PASS_V OR SHIP:ALTITUDE > SHIP:APOAPSIS - 1000.
-
-//     LOCK THROTTLE TO 0.
-//     PRINT "Pass " + PASSES_DONE + " complete.".
-
-//     SET PASSES_DONE TO PASSES_DONE + 1.
-//     SET mass_val TO SHIP:MASS.
-//     WAIT 2.
-// }
-
-// // Clean up node
-// IF NODE:EXISTS {
-//     NODE:REMOVE.
-//     PRINT "Maneuver node removed.".
-// }
+perform_periapsis_burns(TOTAL_DV, 1, PASS_COUNT).
 
 LOCK STEERING TO UP + R(0,90,0).
 PRINT "Oberth transfer complete.".
