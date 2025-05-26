@@ -1,4 +1,4 @@
-// time_at_true_anomaly.ks
+// true_anomaly.ks
 //
 // This function calculates the UT (Universal Time) at which a spacecraft
 // in an elliptical orbit will reach a specified true anomaly (in degrees).
@@ -7,6 +7,7 @@
 // even with low-thrust engines or multi-pass burn strategies.
 //
 // Example usage:
+// RUN "time_at_true_anomaly.ks".
 // SET TA_TARGET TO NODE:ORBIT:TRUEANOMALY.
 // SET NEXT_PASS_UT TO time_at_true_anomaly(TA_TARGET, SHIP:ORBIT, BODY:MU).
 // PRINT "Will reach true anomaly " + TA_TARGET + " deg at UT: " + NEXT_PASS_UT.
@@ -53,4 +54,50 @@ DECLARE FUNCTION time_at_true_anomaly {
     SET target_ut TO T0 + time_since_epoch.
 
     RETURN target_ut.
+}
+
+// Example usage:
+// SET TGO TO TIME:SECONDS + 240. // 4 minutes from now
+// SET TA_AT_TGO TO true_anomaly_at_time(TGO, SHIP:ORBIT, BODY:MU).
+// PRINT "True anomaly at UT " + TGO + ": " + ROUND(TA_AT_TGO, 2) + " degrees".
+
+
+DECLARE FUNCTION true_anomaly_at_time {
+    PARAMETER target_ut.         // Desired time (UT)
+    PARAMETER orbit_struct.      // e.g., SHIP:ORBIT
+    PARAMETER mu_val.            // e.g., BODY:MU
+
+    // Orbital elements
+    SET ecc TO orbit_struct:ECCENTRICITY.
+    SET sma TO orbit_struct:SEMIMAJORAXIS.
+
+    // Mean anomaly at time
+    SET M_RAD TO orbit_struct:MEANANOMALYATUT(target_ut) * CONSTANT:DEGTORAD.
+
+    // === Solve Kepler's Equation numerically: M = E - e*sin(E) ===
+    // Use Newton-Raphson iteration to find Eccentric Anomaly (E)
+    SET E TO M_RAD. // initial guess
+    SET delta TO 1.
+    SET threshold TO 0.00001.
+
+    UNTIL ABS(delta) < threshold {
+        SET f TO E - ecc * SIN(E) - M_RAD.
+        SET f_prime TO 1 - ecc * COS(E).
+        SET delta TO f / f_prime.
+        SET E TO E - delta.
+    }
+
+    // === Convert Eccentric Anomaly to True Anomaly ===
+    SET cos_TA TO (COS(E) - ecc) / (1 - ecc * COS(E)).
+    SET sin_TA TO (SQRT(1 - ecc^2) * SIN(E)) / (1 - ecc * COS(E)).
+    SET true_anomaly_rad TO ARCTAN2(sin_TA, cos_TA).
+
+    // Normalize angle to 0–360 degrees
+    IF true_anomaly_rad < 0 {
+        SET true_anomaly_rad TO true_anomaly_rad + (2 * CONSTANT:PI).
+    }
+
+    SET true_anomaly_deg TO true_anomaly_rad * CONSTANT:RADTODEG.
+
+    RETURN true_anomaly_deg.
 }

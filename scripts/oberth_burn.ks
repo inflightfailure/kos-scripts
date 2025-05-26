@@ -1,20 +1,13 @@
 // oberth_burn.ks
 
+
+RUN "execute_burn.ks".
+// Load true anomaly functions
+RUN "true_anomaly.ks".
+
 IF SAS {
     SAS OFF.
     PRINT "SAS disabled.".
-}
-
-
-
-
-
-// Δv availability check
-SET MAX_DV TO SHIP:DELTAV:VACUUM.
-
-IF MAX_DV < TOTAL_DV {
-    PRINT "ERROR: Required Δv (" + TOTAL_DV + ") exceeds vessel capability (" + MAX_DV + ").".
-    WAIT 0.
 }
 
 // --- Engine ISP calculation ---
@@ -36,7 +29,18 @@ IF totalThrust > 0 {
     WAIT 0.
 }
 
+// Wait for a maneuver node to exist
+PRINT "Checking for maneuver node...".
+WAIT UNTIL hasNode.
 
+// Δv availability check
+SET MAX_DV TO SHIP:DELTAV:VACUUM.
+SET TOTAL_DV TO NEXTNODE:DELTAV.
+
+IF MAX_DV < TOTAL_DV {
+    PRINT "ERROR: Required Δv (" + TOTAL_DV + ") exceeds vessel capability (" + MAX_DV + ").".
+    WAIT 0.
+}
 
 DECLARE FUNCTION compute_max_safe_dv {
     PARAMETER burn_dv_limit.
@@ -68,8 +72,7 @@ DECLARE FUNCTION compute_max_safe_dv {
     RETURN sim_dv.
 }
 
-// Wait for a maneuver node to exist
-WAIT UNTIL hasNode.
+
 SET man_node TO NEXTNODE.
 REMOVE man_node.
 
@@ -79,16 +82,15 @@ SET PASSES_DONE TO 0.
 SET DELTA_V_VECTOR TO man_node:DELTAV.
 SET TOTAL_DV TO DELTA_V_VECTOR:MAG.
 SET BURN_VECTOR TO DELTA_V_VECTOR:NORMALIZED.
-SET NODE_POS TO man_node:ORBIT:POSITION.
-SET NODE_RADIUS TO NODE_POS:MAG.
-SET NODE_VECTOR TO NODE_POS:NORMALIZED.
-SET TRUE_ANOM TO NODE:ORBIT:TRUEANOMALY. //Angle from periapsis to current position
-SET next_node_time TO SHIP:ORBIT:MEANANOMALYATEPOCH()
+SET node_pos TO man_node:ORBIT:POSITION.
+SET NODE_RADIUS TO node_pos:MAG.
+SET NODE_VECTOR TO node_pos:NORMALIZED.
+// NODE:ORBIT:TRUEANOMALY is the true anomaly of the expected orbit after the maneuver
+// SET TRUE_ANOM TO NODE:ORBIT:TRUEANOMALY. //Angle from periapsis to current position
+//SET next_node_time TO SHIP:ORBIT:MEANANOMALYATEPOCH()
+SET node_ta TO true_anomaly_at_time(man_node:ETA, SHIP:ORBIT, BODY:MU).
 
 PRINT "Loaded maneuver node Δv: " + ROUND(TOTAL_DV,1) + " m/s".
-
-
-
 
 SET accel to totalThrust / SHIP:MASS.
 SET total_dv to man_node:DELTAV:MAG.
@@ -105,13 +107,7 @@ SET PASSES_DONE TO 0.
 SET V_INITIAL TO SHIP:VELOCITY:ORBIT:MAG.
 SET TARGET_V TO V_INITIAL + TOTAL_DV.
 
-IF burn_start_time - TIME:SECONDS > 30 {
-    PRINT "Timewarping to burn sequence start.".
-    KUNIVERSE:TIMEWARP:WARPTO(burn_start_time - 15).
-    WAIT UNTIL KUNIVERSE:TIMEWARP:RATE = 1.
-    WAIT 0.2.
-}
-
+// Initiate burn sequence
 UNTIL SHIP:VELOCITY:ORBIT:MAG >= TARGET_V {
 
     // Recalculate current periapsis conditions
@@ -123,36 +119,55 @@ UNTIL SHIP:VELOCITY:ORBIT:MAG >= TARGET_V {
     SET MAX_PASS_DV TO compute_max_safe_dv(REMAINING_DV, MU, R_PER, V_PER, BURN_VECTOR, DV_STEP, SAFE_PERI).
 
     // Add a new maneuver node for this pass at the location of the original maneuver node
-    SET node_time TO man_node:ETA.
-    SET pass_node TO NODE(node_time, NODE_POS, MAX_PASS_DV).
+    // SET node_time TO man_node:ETA. //fixme
+    // set node_ta TO true_anomaly_at_time(node_time, SHIP:ORBIT, BODY:MU).
+    SET node_time TO time_at_true_anomaly(node_ta, SHIP:ORBIT, BODY:MU).
+    SET pass_node TO NODE(node_time, node_pos, MAX_PASS_DV).
     ADD pass_node.
 
-    PRINT "Pass " + (PASSES_DONE+1) + ": Safe burn Δv = " + MAX_PASS_DV.
-    SET TARGET_PASS_V TO SHIP:VELOCITY:ORBIT:MAG + MAX_PASS_DV.
+    LOCK STEERING TO pass_node:BURNVECTOR.
 
-    LOCK STEERING TO BURN_VECTOR.
-    WAIT 20.
-    LOCK THROTTLE TO 1.
-
-    UNTIL SHIP:VELOCITY:ORBIT:MAG >= TARGET_PASS_V {
-        IF SHIP:PERIAPSIS < SAFE_PERI {
-            PRINT "ABORT: Periapsis dropped below " + SAFE_PERI.
-            LOCK THROTTLE TO 0.
-            WAIT 0.
-        }
-        WAIT 0.1.
+    // Timewarp to just before the burn start time
+    SET burn_start_time TO node_time - (burn_time / 2).
+    IF burn_start_time - TIME:SECONDS > 30 {
+        PRINT "Timewarping to burn start time.".
+        KUNIVERSE:TIMEWARP:WARPTO(burn_start_time - 20).
+        WAIT UNTIL KUNIVERSE:TIMEWARP:RATE = 1.
+        WAIT 0.2.
     }
 
-    LOCK THROTTLE TO 0.
+    // Wait until burn start time (node time minus half the burn duration)
+    WAIT UNTIL TIME:SECONDS <= burn_start_time.
+    PRINT "Initiating burn for pass " + (PASSES_DONE + 1) + ", Safe burn Δv = " + MAX_PASS_DV.
+    execute_burn(pass_node).
+    // LOCK THROTTLE TO 1.
+
+    // PRINT "Pass " + (PASSES_DONE+1) + ": Safe burn 
+    // SET TARGET_PASS_V TO SHIP:VELOCITY:ORBIT:MAG + MAX_PASS_DV.
+
+    // LOCK STEERING TO BURN_VECTOR.
+    // WAIT 20.
+    // LOCK THROTTLE TO 1.
+
+    // UNTIL SHIP:VELOCITY:ORBIT:MAG >= TARGET_PASS_V {
+    //     IF SHIP:PERIAPSIS < SAFE_PERI {
+    //         PRINT "ABORT: Periapsis dropped below " + SAFE_PERI.
+    //         LOCK THROTTLE TO 0.
+    //         WAIT 0.
+    //     }
+    //     WAIT 0.1.
+    // }
+
+    // LOCK THROTTLE TO 0.
     REMOVE pass_node.
     PRINT "Burn complete.".
     SET PASSES_DONE TO PASSES_DONE + 1.
-    WAIT 2.
+    // WAIT 2.
 
-    UNTIL VDOT(SHIP:ORBIT:POSITION:NORMALIZED, NODE_VECTOR) > 0.999 {
-        WAIT 0.5.
-    }
-    SET burn_start_time TO TIME:SECONDS.
+    // UNTIL VDOT(SHIP:ORBIT:POSITION:NORMALIZED, NODE_VECTOR) > 0.999 {
+    //     WAIT 0.5.
+    // }
+    // SET burn_start_time TO TIME:SECONDS.
 
 }
 

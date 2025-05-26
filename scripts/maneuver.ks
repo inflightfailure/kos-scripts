@@ -2,6 +2,8 @@
 // SWITCH TO 0.
 // LIST FILES.
 
+RUN "execute_burn.ks".
+
 // Use standard gravity (9.80665 m/s^2) for ISP-based delta-v calculations.
 // ISP is defined relative to Earth/Kerbin gravity and does NOT vary by celestial body.
 SET g0 TO 9.80665.
@@ -94,36 +96,37 @@ WAIT UNTIL burnStartTime - time:seconds <= 1.
 PRINT "Burning for " + ROUND(burnTime, 1) + " seconds.".
 
 // Execute burn
-LOCK THROTTLE TO 1.
-SET lastDeltaV TO nicenode:DELTAV:MAG.
-SET dv0 to nicenode:DELTAV.
+execute_burn(nicenode).
+// LOCK THROTTLE TO 1.
+// SET lastDeltaV TO nicenode:DELTAV:MAG.
+// SET dv0 to nicenode:DELTAV.
 
-UNTIL nicenode:DELTAV:MAG < 0.1 {
-    SET remainingDeltaV TO nicenode:DELTAV:MAG.
+// UNTIL nicenode:DELTAV:MAG < 0.1 {
+//     SET remainingDeltaV TO nicenode:DELTAV:MAG.
 
-    // Gradually reduce throttle when remainingDeltaV < 10 or less than 10% of initial deltaV
-    IF remainingDeltaV < 10 or remainingDeltaV < dv0:MAG * 0.1 {
-        LOCK THROTTLE TO MAX(0.1, remainingDeltaV / 10).
-    } ELSE {
-        LOCK THROTTLE TO 1.
-    }
+//     // Gradually reduce throttle when remainingDeltaV < 10 or less than 10% of initial deltaV
+//     IF remainingDeltaV < 10 or remainingDeltaV < dv0:MAG * 0.1 {
+//         LOCK THROTTLE TO MAX(0.1, remainingDeltaV / 10).
+//     } ELSE {
+//         LOCK THROTTLE TO 1.
+//     }
 
-    IF VDOT(dv0, nicenode:DELTAV) < 0 {
-        PRINT "Node vector diverging. Terminating burn early.".
-        LOCK THROTTLE TO 0.
-        BREAK.
-    }
+//     IF VDOT(dv0, nicenode:DELTAV) < 0 {
+//         PRINT "Node vector diverging. Terminating burn early.".
+//         LOCK THROTTLE TO 0.
+//         BREAK.
+//     }
 
-    IF remainingDeltaV < 0.1 {
-        PRINT "Finalizing burn, remaining Δv: " + ROUND(remainingDeltaV, 2).
-        WAIT UNTIL VDOT(dv0, nicenode:DELTAV) < 0.5.
-        BREAK.
-    }
+//     IF remainingDeltaV < 0.1 {
+//         PRINT "Finalizing burn, remaining Δv: " + ROUND(remainingDeltaV, 2).
+//         WAIT UNTIL VDOT(dv0, nicenode:DELTAV) < 0.5.
+//         BREAK.
+//     }
 
-    SET lastDeltaV TO remainingDeltaV.
-    WAIT 0.
-}
+//     SET lastDeltaV TO remainingDeltaV.
+//     WAIT 0.
+// }
 
-LOCK THROTTLE TO 0.
+// LOCK THROTTLE TO 0.
 REMOVE nicenode.
 PRINT "Maneuver complete.".
