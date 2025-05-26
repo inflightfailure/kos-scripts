@@ -18,14 +18,14 @@ Respond in JSON format with the following keys:
 - "hobby": a silly hobby
     """
 
-    response = openai.ChatCompletion.create(
+    response = openai.chat.completions.create(
         model="gpt-4",
         messages=[{"role": "user", "content": prompt.strip()}],
         temperature=0.8
     )
 
     try:
-        content = response.choices[0].message["content"]
+        content = response.choices[0].message.content
         return json.loads(content)
     except Exception as e:
         print("Error parsing response:", e)
@@ -48,10 +48,10 @@ Summary: {summary}
 Only return the story paragraph as plain text.
     """
 
-    response = openai.ChatCompletion.create(
+    response = openai.chat.completions.create(
         model="gpt-4",
         messages=[{"role": "user", "content": prompt.strip()}],
         temperature=0.9
     )
 
-    return response.choices[0].message["content"].strip()
+    return response.choices[0].message.content.strip()
