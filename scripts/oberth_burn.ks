@@ -5,30 +5,9 @@ IF SAS {
     PRINT "SAS disabled.".
 }
 
-// Auto-copy to local storage if running from archive
-IF VOLUME():NAME = "0" {
-    SET scriptName TO "capture.ks".
 
-    // Check if the file exists in local storage
-    IF NOT VOLUME(1):EXISTS(scriptName) {
-        COPYPATH("0:/" + scriptName, "1:/" + scriptName).
-        PRINT "Copied '" + scriptName + "' to local storage.".
-    } ELSE {
-        PRINT "Script already present in local storage.".
-    }
-}
 
-SET PASSES_DONE TO 0.
 
-// Wait for a maneuver node to exist
-WAIT UNTIL hasNode.
-SET MAN_NODE TO NEXTNODE.
-
-// --- Step 1: Read maneuver node ---
-SET DELTA_V_VECTOR TO MAN_NODE:DELTAV.
-SET TOTAL_DV TO DELTA_V_VECTOR:MAG.
-SET BURN_VECTOR TO DELTA_V_VECTOR:NORMALIZED.
-PRINT "Loaded maneuver node Δv: " + ROUND(TOTAL_DV,1) + " m/s".
 
 // Δv availability check
 SET MAX_DV TO SHIP:DELTAV:VACUUM.
@@ -57,11 +36,7 @@ IF totalThrust > 0 {
     WAIT 0.
 }
 
-SET accel to totalThrust / SHIP:MASS.
-SET total_dv to MAN_NODE:DELTAV:MAG.
-SET burn_time TO total_dv / accel.
-SET node_time TO MAN_NODE:TIME.
-SET burn_start_time to node_time - (burn_time / 2).
+
 
 DECLARE FUNCTION compute_max_safe_dv {
     PARAMETER burn_dv_limit.
@@ -93,6 +68,35 @@ DECLARE FUNCTION compute_max_safe_dv {
     RETURN sim_dv.
 }
 
+// Wait for a maneuver node to exist
+WAIT UNTIL hasNode.
+SET man_node TO NEXTNODE.
+REMOVE man_node.
+
+SET PASSES_DONE TO 0.
+
+// Read maneuver node ---
+SET DELTA_V_VECTOR TO man_node:DELTAV.
+SET TOTAL_DV TO DELTA_V_VECTOR:MAG.
+SET BURN_VECTOR TO DELTA_V_VECTOR:NORMALIZED.
+SET NODE_POS TO man_node:ORBIT:POSITION.
+SET NODE_RADIUS TO NODE_POS:MAG.
+SET NODE_VECTOR TO NODE_POS:NORMALIZED.
+SET TRUE_ANOM TO NODE:ORBIT:TRUEANOMALY. //Angle from periapsis to current position
+SET next_node_time TO SHIP:ORBIT:MEANANOMALYATEPOCH()
+
+PRINT "Loaded maneuver node Δv: " + ROUND(TOTAL_DV,1) + " m/s".
+
+
+
+
+SET accel to totalThrust / SHIP:MASS.
+SET total_dv to man_node:DELTAV:MAG.
+SET burn_time TO total_dv / accel.
+SET node_time TO man_node:TIME.
+SET burn_start_time to node_time - (burn_time / 2).
+
+
 SET MU TO BODY:MU.
 SET SAFE_PERI TO 75000.
 SET DV_STEP TO 1.0.
@@ -101,7 +105,7 @@ SET PASSES_DONE TO 0.
 SET V_INITIAL TO SHIP:VELOCITY:ORBIT:MAG.
 SET TARGET_V TO V_INITIAL + TOTAL_DV.
 
-IF burn_start_time - TIME:SECONDS > 60 {
+IF burn_start_time - TIME:SECONDS > 30 {
     PRINT "Timewarping to burn sequence start.".
     KUNIVERSE:TIMEWARP:WARPTO(burn_start_time - 15).
     WAIT UNTIL KUNIVERSE:TIMEWARP:RATE = 1.
@@ -109,13 +113,6 @@ IF burn_start_time - TIME:SECONDS > 60 {
 }
 
 UNTIL SHIP:VELOCITY:ORBIT:MAG >= TARGET_V {
-    SET TIME_TO_PERI TO ETA:PERIAPSIS.
-    IF TIME_TO_PERI > 30 {
-        SET WARP_TARGET TO TIME:SECONDS + TIME_TO_PERI - 30.
-        PRINT "Warping to " + (TIME_TO_PERI - 30) + "s before periapsis.".
-        KUNIVERSE:TIMEWARP:WARPTO(WARP_TARGET).
-        WAIT UNTIL KUNIVERSE:TIMEWARP:RATE = 1.
-        WAIT 0.2.
 
     // Recalculate current periapsis conditions
     SET R_PER TO BODY:RADIUS + SHIP:PERIAPSIS.
@@ -124,6 +121,11 @@ UNTIL SHIP:VELOCITY:ORBIT:MAG >= TARGET_V {
     // Compute safe Δv for this pass
     SET REMAINING_DV TO TARGET_V - SHIP:VELOCITY:ORBIT:MAG.
     SET MAX_PASS_DV TO compute_max_safe_dv(REMAINING_DV, MU, R_PER, V_PER, BURN_VECTOR, DV_STEP, SAFE_PERI).
+
+    // Add a new maneuver node for this pass at the location of the original maneuver node
+    SET node_time TO man_node:ETA.
+    SET pass_node TO NODE(node_time, NODE_POS, MAX_PASS_DV).
+    ADD pass_node.
 
     PRINT "Pass " + (PASSES_DONE+1) + ": Safe burn Δv = " + MAX_PASS_DV.
     SET TARGET_PASS_V TO SHIP:VELOCITY:ORBIT:MAG + MAX_PASS_DV.
@@ -142,10 +144,15 @@ UNTIL SHIP:VELOCITY:ORBIT:MAG >= TARGET_V {
     }
 
     LOCK THROTTLE TO 0.
+    REMOVE pass_node.
     PRINT "Burn complete.".
     SET PASSES_DONE TO PASSES_DONE + 1.
     WAIT 2.
-}
+
+    UNTIL VDOT(SHIP:ORBIT:POSITION:NORMALIZED, NODE_VECTOR) > 0.999 {
+        WAIT 0.5.
+    }
+    SET burn_start_time TO TIME:SECONDS.
 
 }
 
@@ -174,7 +181,7 @@ UNTIL SHIP:VELOCITY:ORBIT:MAG >= TARGET_V {
 // SET halfPasses TO FLOOR(PASS_COUNT / 2).
 // SET totalTimeForHalfPasses TO halfPasses * timePerPass.
 
-// SET nodeTime TO MAN_NODE:TIME.
+// SET nodeTime TO man_node:TIME.
 // SET startTime TO nodeTime - totalTimeForHalfPasses.
 
 // // Only wait if the calculated start time is in the future
