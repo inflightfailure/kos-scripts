@@ -72,7 +72,7 @@ DECLARE FUNCTION true_anomaly_at_time {
     SET sma TO orbit_struct:SEMIMAJORAXIS.
 
     // Mean anomaly at time
-    SET M_RAD TO orbit_struct:MEANANOMALYATUT(target_ut) * CONSTANT:DEGTORAD.
+    SET M_RAD TO orbit_struct:MEANANOMALYATEPOCH * CONSTANT:DEGTORAD.
 
     // === Solve Kepler's Equation numerically: M = E - e*sin(E) ===
     // Use Newton-Raphson iteration to find Eccentric Anomaly (E)
