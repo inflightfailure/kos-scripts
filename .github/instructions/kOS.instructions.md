@@ -12,3 +12,4 @@ This file contains instructions for the kOS mod in Kerbal Space Program.
 - Initialize variables as empty strings or with a default value to avoid unexpected behavior.
 - `ALTITUDE` is never a valid suffix for `ORBIT` and should not be used as such.
 - Use time warping to avoid having the player wait longer than 30 seconds for the next action to occur.
+- Do not attempt to use `PRESERVE` or `RETURN` outside of a trigger body, such as `ON ABORT`. Use a flag variable to control the loop flow instead.
