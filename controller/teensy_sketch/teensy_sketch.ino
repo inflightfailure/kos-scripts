@@ -14,9 +14,26 @@ void clearLCD() {
 
 void lcdPrintLine(uint8_t row, const String &text) {
   int row_offsets[] = { 0x00, 0x40 };
+  String padded = text;
+  while (padded.length() < 16) {
+    padded += " ";
+  }
   Serial1.write(0xFE);
   Serial1.write(0x80 + row_offsets[row]);
-  Serial1.print(text.substring(0, 16));
+  Serial1.print(padded.substring(0, 16));
+}
+
+String formatAltitude(String raw) {
+  float alt = raw.toFloat();
+  String formatted;
+
+  if (alt >= 10000) {
+    formatted = String(alt / 1000.0, 2) + " km";
+  } else {
+    formatted = String((int)alt) + " m";
+  }
+
+  return "ALT: " + formatted;
 }
 
 void setup() {
@@ -58,6 +75,8 @@ void loop() {
     char incomingChar = Serial.read();
 
     if (incomingChar == '\n') {
+      String formatted = formatAltitude(serialBuffer);
+      lcdPrintLine(1, formatted);
       // Complete message received — update LCD line 1
       lcdPrintLine(1, serialBuffer);
       serialBuffer = "";

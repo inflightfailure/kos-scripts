@@ -1,6 +1,7 @@
 import krpc
 import serial
 import time
+import struct
 import sys
 
 def connect_to_ksp(max_attempts=5, retry_delay=5):
@@ -84,7 +85,7 @@ while True:
             use_mean = not use_mean
 
     alt = int(vessel.flight().mean_altitude if use_mean else vessel.flight().surface_altitude)
-    prefix = "M" if use_mean else "S"
-    ser.write(f"{prefix}:{alt}\n".encode())
-    time.sleep(0.25)
+    apoapsis = int(vessel.orbit.apoapsis_altitude)
+    ser.write(f"A:{alt}:{apoapsis}\n".encode())
+    time.sleep(0.5)  # 0.1 causes annoying flicker
 
