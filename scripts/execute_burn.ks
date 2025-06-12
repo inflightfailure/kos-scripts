@@ -9,17 +9,19 @@ DECLARE FUNCTION execute_burn {
     LOCAL max_acceleration IS SHIP:MAXTHRUST / SHIP:MASS.
     LOCAL burn_time IS burn_node:DELTAV:MAG / max_acceleration.
     LOCAL warp_rate IS 1.
+    LOCAL long_burn IS false.
     
     // Scale physics warp based on burn duration
-    IF burn_time > 3600 {        // > 1 hour
+    IF burn_time > 1800 {        // > 30 minutes
         SET warp_rate TO 4.      // Maximum physics warp
-    } ELSE IF burn_time > 1800 { // > 30 minutes
+    } ELSE IF burn_time > 600 { // > 10 minutes
         SET warp_rate TO 3.
-    } ELSE IF burn_time > 600 {  // > 10 minutes
+    } ELSE IF burn_time > 180 {  // > 3 minutes
         SET warp_rate TO 2.
     }
     
     IF warp_rate > 1 {
+        SET long_burn TO true.
         PRINT "Long burn detected (" + ROUND(burn_time/60,1) + " minutes).".
         PRINT "Enabling " + warp_rate + "x physics warp.".
         SET KUNIVERSE:TIMEWARP:MODE TO "PHYSICS".
@@ -40,7 +42,7 @@ DECLARE FUNCTION execute_burn {
         }
 
         // Throttle control with progress display
-        IF remainingDeltaV < 10 OR remainingDeltaV < orig_dv:MAG * 0.1 {
+        IF (remainingDeltaV < 10 OR remainingDeltaV < orig_dv:MAG * 0.1) AND long_burn = false {
             LOCK THROTTLE TO MAX(0.1, remainingDeltaV / 10).
         } ELSE {
             LOCK THROTTLE TO 1.

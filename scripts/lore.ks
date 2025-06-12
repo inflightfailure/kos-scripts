@@ -1,16 +1,13 @@
 // lore.ks — Kerbal Lore Sync Script for kOS
 
-// Writes crewlist.txt to ARCHIVE
+// Writes crewlist.txt to ARCHIVE using VolumeFile methods
 FUNCTION write_crewlist {
-    // Write the first line (or create the file)
-    LOG SHIP:CREW[0]:NAME TO "crewlist.txt".
+    LOCAL crewfile IS ARCHIVE:OPEN("crewlist.txt").
+    crewfile:CLEAR(). // Overwrite the file
 
-    // Append the rest of the crew
-    LOCAL i IS 1.
-    LOCAL f IS ARCHIVE:OPEN("crewlist.txt").
-    UNTIL i >= SHIP:CREW:LENGTH {
-        LOG SHIP:CREW[i]:NAME to crewlist.txt. 
-        SET i TO i + 1.
+    // Write each crew member's name, one per line
+    FOR crew IN SHIP:CREW {
+        crewfile:WRITE(crew:NAME + CHAR(13) + CHAR(10)).
     }
 
     PRINT "📄 crewlist.txt written with " + SHIP:CREW:LENGTH + " names.".
@@ -32,9 +29,9 @@ FUNCTION print_lore {
         PRINT "⚠️ No lore file found.".
         RETURN.
     }
-    LOCAL f IS ARCHIVE:OPEN("crew_lore.txt").
+    LOCAL lorefile IS ARCHIVE:OPEN("crew_lore.txt").
     PRINT "📚 Crew Lore:".
-    LOCAL lines IS f:READALL().
+    LOCAL lines IS lorefile:READALL().
     FOR line IN lines {
         PRINT line.
     }
