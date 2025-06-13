@@ -29,9 +29,18 @@ DECLARE FUNCTION execute_burn {
         WAIT 1. // Allow physics to settle
     }
 
+    LOCAL prev_remainingDeltaV IS burn_node:DELTAV:MAG.
+
     UNTIL burn_node:DELTAV:MAG < 0.1 {
         SET remainingDeltaV TO burn_node:DELTAV:MAG.
         LOCAL remaining_percent IS remainingDeltaV / orig_dv:MAG.
+
+        // Safety check: abort if remaining Δv increases
+        // IF remainingDeltaV > prev_remainingDeltaV {
+        //     PRINT "Warning: Remaining Δv increased! Aborting burn.".
+        //     BREAK.
+        // }
+        // SET prev_remainingDeltaV TO remainingDeltaV.
 
         // Disable warp for fine control near end
         IF warp_rate > 1 AND remaining_percent < 0.1 {

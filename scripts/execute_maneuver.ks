@@ -70,7 +70,7 @@ DECLARE FUNCTION execute_maneuver_node {
 
     // Timewarp to just before burn start
     IF burnStartTime - time:seconds > 30 {
-        kuniverse:timewarp:warpto(burnStartTime - 20).
+        kuniverse:timewarp:warpto(burnStartTime - 5).
         WAIT 1.
         WAIT UNTIL kuniverse:timewarp:rate = 1.
         WAIT 0.2.
