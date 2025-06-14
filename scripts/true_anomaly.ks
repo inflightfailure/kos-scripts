@@ -63,41 +63,66 @@ DECLARE FUNCTION time_at_true_anomaly {
 
 
 DECLARE FUNCTION true_anomaly_at_time {
-    PARAMETER target_ut.         // Desired time (UT)
+    PARAMETER desired_ut.         // Desired time (UT)
     PARAMETER orbit_struct.      // e.g., SHIP:ORBIT
     PARAMETER mu_val.            // e.g., BODY:MU
 
     // Orbital elements
     SET ecc TO orbit_struct:ECCENTRICITY.
     SET sma TO orbit_struct:SEMIMAJORAXIS.
+    SET M0 TO orbit_struct:MEANANOMALYATEPOCH.
+    SET t0 TO orbit_struct:EPOCH.
 
-    // Mean anomaly at time
-    SET M_RAD TO orbit_struct:MEANANOMALYATEPOCH * CONSTANT:DEGTORAD.
+    PRINT "DEBUG: Called true_anomaly_at_time with desired_ut=" + desired_ut + ", ecc=" + ecc + ", sma=" + sma + ".".
+
+    // Mean motion (rad/s)
+    SET n TO SQRT(mu_val / (sma^3)).
+    PRINT "DEBUG: Mean motion n = " + n + ".".
+
+    // Mean anomaly at the desired UT (in radians)
+    SET M_RAD TO (M0 + n * (desired_ut - t0)).
+    // Normalize to 0–2π
+    SET M_RAD TO MOD(M_RAD, 2 * CONSTANT:PI).
+    PRINT "DEBUG: Mean anomaly at UT (rad): " + M_RAD + ".".
 
     // === Solve Kepler's Equation numerically: M = E - e*sin(E) ===
-    // Use Newton-Raphson iteration to find Eccentric Anomaly (E)
     SET E TO M_RAD. // initial guess
     SET delta TO 1.
     SET threshold TO 0.00001.
+    SET iter TO 0.
+    IF ecc < 0.8 {
+        SET E TO M_RAD.
+    } ELSE {
+        SET E TO ARCTAN2(SIN(M_RAD), COS(M_RAD) - ecc).
+    }
+    SET max_iter TO 100.
 
-    UNTIL ABS(delta) < threshold {
+    UNTIL ABS(delta) < threshold OR iter > max_iter {
         SET f TO E - ecc * SIN(E) - M_RAD.
         SET f_prime TO 1 - ecc * COS(E).
         SET delta TO f / f_prime.
         SET E TO E - delta.
+        SET iter TO iter + 1.
     }
+    IF iter > max_iter {
+        PRINT "WARNING: Kepler's equation did not converge after " + max_iter + " iterations.".
+        PRINT "DEBUG: ecc=" + ecc + ", M_RAD=" + M_RAD + ", initial E=" + E.
+        RETURN 0.
+    }
+    PRINT "DEBUG: Eccentric anomaly (rad): " + E + ".".
 
     // === Convert Eccentric Anomaly to True Anomaly ===
     SET cos_TA TO (COS(E) - ecc) / (1 - ecc * COS(E)).
     SET sin_TA TO (SQRT(1 - ecc^2) * SIN(E)) / (1 - ecc * COS(E)).
     SET true_anomaly_rad TO ARCTAN2(sin_TA, cos_TA).
 
-    // Normalize angle to 0–360 degrees
+    // Normalize angle to 0–2π radians
     IF true_anomaly_rad < 0 {
         SET true_anomaly_rad TO true_anomaly_rad + (2 * CONSTANT:PI).
     }
 
     SET true_anomaly_deg TO true_anomaly_rad * CONSTANT:RADTODEG.
+    PRINT "DEBUG: True anomaly at UT (deg): " + true_anomaly_deg + ".".
 
     RETURN true_anomaly_deg.
 }
