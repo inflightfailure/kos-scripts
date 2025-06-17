@@ -2,9 +2,9 @@
 
 // === Pins ===
 const int buttonPin = 8;
-const int shiftDataPin = 2;   // SER
-const int shiftClockPin = 3;  // SRCLK
-const int shiftLatchPin = 4;  // RCLK
+const int shiftDataPin = 3;   // SER
+const int shiftClockPin = 4;  // SRCLK
+const int shiftLatchPin = 5;  // RCLK
 
 bool lastButtonState = HIGH;
 bool currentButtonState = HIGH;
@@ -42,25 +42,46 @@ String formatAltitude(String raw) {
 
 // === LED BAR ===
 void updateLEDBarShiftRegister(int chargePercent) {
-  int segments = map(chargePercent, 0, 100, 0, 10);
+  // Clamp and map charge % to segment count
+  int segments = constrain(map(chargePercent, 0, 100, 0, 10), 0, 10);
+
+  // Generate bitmask
   uint16_t output = 0;
+  // Flip order: illuminate bits from 9 down to (10 - segments)
   for (int i = 0; i < segments; i++) {
-    output |= (1 << i);
+    output |= (1 << (9 - i));  // bit 9 = top LED, bit 0 = bottom LED
   }
 
+  // Send to shift registers
   digitalWrite(shiftLatchPin, LOW);
-
-  // REVERSED ORDER: send low byte first
-  shiftOut(shiftDataPin, shiftClockPin, MSBFIRST, output & 0xFF);
-  shiftOut(shiftDataPin, shiftClockPin, MSBFIRST, (output >> 8) & 0xFF);
-
+  shiftOut(shiftDataPin, shiftClockPin, MSBFIRST, (output >> 8) & 0xFF);  // High byte first
+  shiftOut(shiftDataPin, shiftClockPin, MSBFIRST, output & 0xFF);         // Low byte
   digitalWrite(shiftLatchPin, HIGH);
 
+  // Debug output
   Serial.print("Charge segments: ");
   Serial.print(segments);
   Serial.print(", Output bits: ");
   Serial.println(output, BIN);
 }
+
+
+void testEachBitIndividually() {
+  for (int i = 0; i < 16; i++) {
+    uint16_t testPattern = (1 << i);
+
+    digitalWrite(shiftLatchPin, LOW);
+    shiftOut(shiftDataPin, shiftClockPin, MSBFIRST, (testPattern >> 8) & 0xFF);
+    shiftOut(shiftDataPin, shiftClockPin, MSBFIRST, testPattern & 0xFF);
+    digitalWrite(shiftLatchPin, HIGH);
+
+    Serial.print("Testing bit ");
+    Serial.println(i);
+
+    delay(1000);  // wait and observe
+  }
+}
+
 
 void setup() {
   pinMode(buttonPin, INPUT_PULLUP);
@@ -77,6 +98,7 @@ void setup() {
   lcdPrintLine(1, "Waiting...");
 
   updateLEDBarShiftRegister(0); // Clear bar initially
+  testEachBitIndividually();
 }
 
 void loop() {
