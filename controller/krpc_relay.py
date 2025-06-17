@@ -84,8 +84,19 @@ while True:
             print("Toggle command received. Switching altitude mode.")
             use_mean = not use_mean
 
+    # Get total and available ElectricCharge resources
+    electric_charge = vessel.resources.amount('ElectricCharge')
+    electric_charge_max = vessel.resources.max('ElectricCharge')
+
+    # Calculate percentage
+    if electric_charge_max > 0:
+        charge_percent = int((electric_charge / electric_charge_max) * 100)
+    else:
+        charge_percent = 0
+    print(f"Charge amount: {electric_charge}, Max: {electric_charge_max}, Percent: {charge_percent}")
+
     alt = int(vessel.flight().mean_altitude if use_mean else vessel.flight().surface_altitude)
     apoapsis = int(vessel.orbit.apoapsis_altitude)
-    ser.write(f"A:{alt}:{apoapsis}\n".encode())
+    ser.write(f"{alt}:{charge_percent}\n".encode())
     time.sleep(0.5)  # 0.1 causes annoying flicker
 
