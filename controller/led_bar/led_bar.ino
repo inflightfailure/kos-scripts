@@ -13,7 +13,6 @@ const unsigned long debounceDelay = 50;
 
 String serialBuffer = "";
 
-uint8_t pwmStep = 0;          // Flicker PWM emulation step
 
 // === LCD ===
 void clearLCD() {
@@ -43,30 +42,25 @@ String formatAltitude(String raw) {
 }
 
 // === LED BAR ===
+const uint8_t PWM_MAX = 8;
+const uint8_t PWM_STEPS = PWM_MAX;
+uint8_t dimLevels[10] = {0};  // brightness levels per segment
+
+// Optional: perceptual mapping for 5 steps (0-4). You can tweak these.
+const uint8_t perceptualMap[PWM_MAX + 1] = {
+  0, 1, 2, 4, 6, 10, 14, 20, 30  // 9 entries from 0 to PWM_MAX
+};
+
 void updateLEDBarShiftRegister(int chargePercent) {
-  int totalSegments = map(chargePercent, 0, 100, 0, 1000); // 0 to 1000
-  int fullSegments = totalSegments / 100;
-  int partialBrightness = totalSegments % 100;
-  uint16_t output = 0;
+  // Map 0–100% to 0–(PWM_MAX * 10)
+  int totalUnits = map(chargePercent, 0, 100, 0, PWM_MAX * 10);
 
-  for (int i = 0; i < fullSegments; i++) {
-    output |= (1 << (9 - i));  // Flip orientation
+  for (int i = 0; i < 10; i++) {
+    int rawLevel = constrain(totalUnits - i * PWM_MAX, 0, PWM_MAX);
+    dimLevels[i] = perceptualMap[rawLevel];  // Apply perceptual scaling
   }
-
-  if (fullSegments < 10) {
-    int flickerThreshold = map(partialBrightness, 0, 100, 0, 4);
-    if (pwmStep < flickerThreshold) {
-      output |= (1 << (9 - fullSegments));
-    }
-  }
-
-  digitalWrite(shiftLatchPin, LOW);
-  shiftOut(shiftDataPin, shiftClockPin, MSBFIRST, (output >> 8) & 0xFF);
-  shiftOut(shiftDataPin, shiftClockPin, MSBFIRST, output & 0xFF);
-  digitalWrite(shiftLatchPin, HIGH);
-
-  pwmStep = (pwmStep + 1) % 4;
 }
+
 
 String inputLine = "";
 
@@ -83,7 +77,7 @@ void testEachBitIndividually() {
     Serial.print("Testing bit ");
     Serial.println(i);
 
-    delay(1000);  // wait and observe
+    delay(500);  // wait and observe
   }
 }
 
@@ -123,13 +117,6 @@ void loop() {
   }
   lastButtonState = reading;
 
-  static unsigned long lastPwmUpdate = 0;
-  if (millis() - lastPwmUpdate >= 100) {
-    pwmStep = (pwmStep + 1) % 4;  // Adjust 4 to control flicker frequency
-    lastPwmUpdate = millis();
-  }
-
-
   // --- Serial handling ---
   while (Serial.available()) {
     char incomingChar = Serial.read();
@@ -148,4 +135,22 @@ void loop() {
       if (serialBuffer.length() > 32) serialBuffer = ""; // avoid buffer overflow
     }
   }
+
+  // --- LED PWM Refresh ---
+  static uint8_t pwmCounter = 0;
+  pwmCounter = (pwmCounter + 1) % 32; // 32 = max perceptualMap value
+
+  uint16_t output = 0;
+  for (int i = 0; i < 10; i++) {
+    if (dimLevels[i] > pwmCounter) {
+      output |= (1 << (9 - i));  // Flip orientation
+    }
+  }
+
+  digitalWrite(shiftLatchPin, LOW);
+  shiftOut(shiftDataPin, shiftClockPin, MSBFIRST, (output >> 8) & 0xFF);
+  shiftOut(shiftDataPin, shiftClockPin, MSBFIRST, output & 0xFF);
+  digitalWrite(shiftLatchPin, HIGH);
+
+  delayMicroseconds(100); // adjust for flicker tolerance and CPU load
 }
