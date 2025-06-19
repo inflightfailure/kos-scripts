@@ -13,6 +13,8 @@ const unsigned long debounceDelay = 50;
 
 String serialBuffer = "";
 
+uint8_t pwmStep = 0;          // Flicker PWM emulation step
+
 // === LCD ===
 void clearLCD() {
   Serial1.write(0xFE);
@@ -42,28 +44,31 @@ String formatAltitude(String raw) {
 
 // === LED BAR ===
 void updateLEDBarShiftRegister(int chargePercent) {
-  // Clamp and map charge % to segment count
-  int segments = constrain(map(chargePercent, 0, 100, 0, 10), 0, 10);
-
-  // Generate bitmask
+  int totalSegments = map(chargePercent, 0, 100, 0, 1000); // 0 to 1000
+  int fullSegments = totalSegments / 100;
+  int partialBrightness = totalSegments % 100;
   uint16_t output = 0;
-  // Flip order: illuminate bits from 9 down to (10 - segments)
-  for (int i = 0; i < segments; i++) {
-    output |= (1 << (9 - i));  // bit 9 = top LED, bit 0 = bottom LED
+
+  for (int i = 0; i < fullSegments; i++) {
+    output |= (1 << (9 - i));  // Flip orientation
   }
 
-  // Send to shift registers
+  if (fullSegments < 10) {
+    int flickerThreshold = map(partialBrightness, 0, 100, 0, 4);
+    if (pwmStep < flickerThreshold) {
+      output |= (1 << (9 - fullSegments));
+    }
+  }
+
   digitalWrite(shiftLatchPin, LOW);
-  shiftOut(shiftDataPin, shiftClockPin, MSBFIRST, (output >> 8) & 0xFF);  // High byte first
-  shiftOut(shiftDataPin, shiftClockPin, MSBFIRST, output & 0xFF);         // Low byte
+  shiftOut(shiftDataPin, shiftClockPin, MSBFIRST, (output >> 8) & 0xFF);
+  shiftOut(shiftDataPin, shiftClockPin, MSBFIRST, output & 0xFF);
   digitalWrite(shiftLatchPin, HIGH);
 
-  // Debug output
-  Serial.print("Charge segments: ");
-  Serial.print(segments);
-  Serial.print(", Output bits: ");
-  Serial.println(output, BIN);
+  pwmStep = (pwmStep + 1) % 4;
 }
+
+String inputLine = "";
 
 
 void testEachBitIndividually() {
@@ -117,6 +122,13 @@ void loop() {
     }
   }
   lastButtonState = reading;
+
+  static unsigned long lastPwmUpdate = 0;
+  if (millis() - lastPwmUpdate >= 100) {
+    pwmStep = (pwmStep + 1) % 4;  // Adjust 4 to control flicker frequency
+    lastPwmUpdate = millis();
+  }
+
 
   // --- Serial handling ---
   while (Serial.available()) {
